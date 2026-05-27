@@ -13,13 +13,17 @@ import anthropic
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from coe.slot_extractor import extract
+from coe import extract
 
 load_dotenv(Path(__file__).parent.parent / ".env")
-client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+_api_key = os.environ.get("ANTHROPIC_API_KEY")
+client = anthropic.Anthropic(api_key=_api_key) if _api_key else None
 
 
 def show(label: str, query: str, use_llm: bool = False):
+    if use_llm and client is None:
+        print(f"\n[{label}] 스킵 — ANTHROPIC_API_KEY 없음")
+        return
     slots = extract(query, llm_client=client if use_llm else None)
     print(f"\n{'='*55}")
     print(f"[{label}]")
