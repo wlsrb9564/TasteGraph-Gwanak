@@ -103,3 +103,56 @@ def test_no_anchor():
     slots = {"station": None, "category": None, "menu": None,
              "keywords": [], "facilities": [], "clarification_needed": None}
     assert not _has_anchor(slots)
+
+
+from unittest.mock import MagicMock
+
+
+# ── extract(): anchor 있으면 Layer 2 호출 안 함 ──────────────────
+
+def test_extract_no_llm_call_when_anchor():
+    mock_client = MagicMock()
+    result = extract("신림역 고기집", llm_client=mock_client)
+    mock_client.messages.create.assert_not_called()
+    assert result["station"] == "신림역"
+    assert result["category"] == "고기집"
+
+
+# ── extract(): anchor 없으면 Layer 2 호출 ────────────────────────
+
+def test_extract_calls_llm_when_no_anchor():
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(
+        text='{"category": "고기집", "station": "신림역", "menu": null, '
+             '"keywords": [], "facilities": [], "clarification_needed": null}'
+    )]
+    mock_client.messages.create.return_value = mock_response
+
+    result = extract("가성비 좋은 곳", llm_client=mock_client)
+    mock_client.messages.create.assert_called_once()
+    assert result["category"] == "고기집"
+
+
+# ── extract(): llm_client=None이면 Layer 2 스킵 ──────────────────
+
+def test_extract_skips_layer2_when_no_client():
+    result = extract("가성비 좋은 곳", llm_client=None)
+    assert result["station"] is None
+    assert result["category"] is None
+
+
+# ── extract(): clarification_needed 필드 전달 ────────────────────
+
+def test_extract_clarification_needed_passed_through():
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(
+        text='{"category": null, "station": null, "menu": null, '
+             '"keywords": [], "facilities": [], '
+             '"clarification_needed": "어느 지역에서 찾으세요?"}'
+    )]
+    mock_client.messages.create.return_value = mock_response
+
+    result = extract("맛있는 거 먹고싶어", llm_client=mock_client)
+    assert result["clarification_needed"] == "어느 지역에서 찾으세요?"

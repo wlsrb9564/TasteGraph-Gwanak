@@ -218,6 +218,72 @@ def _has_anchor(slots: dict) -> bool:
     return bool(slots.get("category") or slots.get("station"))
 
 
+# ── Layer 2 ──────────────────────────────────────────────────────
+
+_CATEGORIES_STR = ", ".join(_CATEGORIES)
+_KW_NAMES_STR = ", ".join(_kw_data.keys())
+
+_LAYER2_SYSTEM = f"""당신은 맛집 검색 슬롯 추출기입니다.
+사용자 쿼리에서 아래 JSON 형식으로 슬롯을 추출하세요.
+지정된 카테고리·키워드 목록 외의 값은 사용하지 마세요.
+JSON만 반환하고 설명은 쓰지 마세요.
+
+카테고리 목록: [{_CATEGORIES_STR}]
+리뷰키워드 목록: [{_KW_NAMES_STR}]
+시설 목록: [주차, 예약, 포장, 배달]
+
+반환 형식:
+{{
+  "category": "카테고리명 또는 null",
+  "station": "X역 형태 또는 null",
+  "menu": "메뉴명 그대로 또는 null",
+  "keywords": ["해당 리뷰키워드 목록"],
+  "facilities": ["주차/예약/포장/배달 중 해당하는 것들"],
+  "clarification_needed": "station이나 category 모두 불명확하면 사용자에게 물을 한 문장(한국어), 아니면 null"
+}}"""
+
+
+def _layer2(query: str, llm_client) -> dict:
+    response = llm_client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=256,
+        system=_LAYER2_SYSTEM,
+        messages=[{"role": "user", "content": query}],
+    )
+    raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+    data = json.loads(raw)
+    return {
+        "station": data.get("station"),
+        "category": data.get("category"),
+        "menu": data.get("menu"),
+        "keywords": data.get("keywords") or [],
+        "facilities": data.get("facilities") or [],
+        "clarification_needed": data.get("clarification_needed"),
+    }
+
+
 def extract(query: str, llm_client=None) -> dict:
-    """자연어 쿼리 → 슬롯 dict. Layer 2는 Task 4에서 연결."""
-    return _layer1(query)
+    """자연어 쿼리 → 슬롯 dict.
+
+    Args:
+        query: 사용자 입력 문자열
+        llm_client: anthropic.Anthropic 인스턴스.
+                    None이면 Layer 2 스킵 (테스트·오프라인).
+
+    Returns:
+        {
+            "category": str | None,
+            "station": str | None,
+            "menu": str | None,
+            "keywords": list[str],
+            "facilities": list[str],
+            "clarification_needed": str | None,
+        }
+    """
+    slots = _layer1(query)
+    if not _has_anchor(slots) and llm_client is not None:
+        slots = _layer2(query, llm_client)
+    return slots
