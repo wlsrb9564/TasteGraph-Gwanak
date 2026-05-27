@@ -57,14 +57,35 @@ _STOP_WORDS_KW = {
 }
 
 
+_TRAILING_PARTICLES = ("가", "이", "은", "는", "을", "를", "와", "과", "도", "로", "에", "의")
+_VERB_ENDINGS = ("해요", "이에요", "예요", "아요", "어요")
+
+
+def _stem(word: str) -> list[str]:
+    """단어 끝 조사/어미를 제거한 어근 후보 반환 (원형 포함)."""
+    stems = [word]
+    for ending in _VERB_ENDINGS:
+        if word.endswith(ending) and len(word) - len(ending) >= 2:
+            stems.append(word[: -len(ending)])
+            break
+    for particle in _TRAILING_PARTICLES:
+        if word.endswith(particle) and len(word) - 1 >= 2:
+            stems.append(word[:-1])
+            break
+    return stems
+
+
 def _build_keyword_reverse() -> dict[str, str]:
     reverse: dict[str, str] = {}
     for kw_name, phrases in _kw_data.items():
         for phrase in phrases:
             words = re.findall(r"[가-힣]{2,5}", phrase)
             for word in words:
-                if word not in _STOP_WORDS_KW and word not in reverse:
-                    reverse[word] = kw_name
+                if word in _STOP_WORDS_KW:
+                    continue
+                for candidate in _stem(word):
+                    if candidate not in _STOP_WORDS_KW and candidate not in reverse:
+                        reverse[candidate] = kw_name
     return reverse
 
 
@@ -114,11 +135,35 @@ def _extract_facilities(query: str) -> list[str]:
     return facilities
 
 
+# 키워드 매칭 허용 접미사: 조사/어미/형용사형 어미
+_KW_VALID_SUFFIXES = {
+    "가", "이", "은", "는", "을", "를", "와", "과", "도", "로", "에", "의",
+    "한", "하다", "해요", "하고", "하며", "하면", "해서", "하니", "하여",
+    "이에요", "예요", "아요", "어요",
+}
+
+
+def _kw_token_matches(token: str, word: str) -> bool:
+    """token이 word와 정확히 일치하거나, word 뒤에 허용 접미사가 붙은 경우."""
+    if token == word:
+        return True
+    if not token.startswith(word):
+        return False
+    suffix = token[len(word):]
+    return suffix in _KW_VALID_SUFFIXES
+
+
 def _extract_keywords(query: str) -> list[str]:
+    """공백 단위 토큰에서 _KW_REVERSE 키가 허용 접미사와 함께 포함되면 매핑."""
     keywords: list[str] = []
+    tokens = query.split()
     for word, kw_name in _KW_REVERSE.items():
-        if word in query and kw_name not in keywords:
-            keywords.append(kw_name)
+        if kw_name in keywords:
+            continue
+        for token in tokens:
+            if _kw_token_matches(token, word):
+                keywords.append(kw_name)
+                break
     return keywords
 
 
