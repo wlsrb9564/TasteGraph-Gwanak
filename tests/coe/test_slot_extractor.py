@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 from coe.slot_extractor import _has_anchor, _layer1, extract
 
 
@@ -104,8 +106,6 @@ def test_no_anchor():
              "keywords": [], "facilities": [], "clarification_needed": None}
     assert not _has_anchor(slots)
 
-
-from unittest.mock import MagicMock
 
 
 # ── extract(): anchor 있으면 Layer 2 호출 안 함 ──────────────────

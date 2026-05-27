@@ -254,7 +254,11 @@ def _layer2(query: str, llm_client) -> dict:
     if raw.startswith("```"):
         raw = re.sub(r"^```[a-z]*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"station": None, "category": None, "menu": None,
+                "keywords": [], "facilities": [], "clarification_needed": None}
     return {
         "station": data.get("station"),
         "category": data.get("category"),
