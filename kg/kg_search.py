@@ -24,6 +24,7 @@ STATIONS = {name: (v["lat"], v["lng"]) for name, v in _raw.items()}
 
 RADIUS_STEPS = [500, 800, 1200, 1800]
 MIN_PARTICIPANTS = 20  # ratio/weight 기반 순위에서 표본 임계값
+LOOSE_MIN_RESULTS = 3  # strict 결과가 이 수 미만이면 loose fallback 시도
 
 
 # ── 빌더 함수들 ───────────────────────────────────────────────────
@@ -238,30 +239,13 @@ def _build_with_clause(has_menu, has_keyword, has_facility, dist_expr):
     return clause
 
 
-def search(driver, slots, k=10):
-    """슬롯 dict → 후보 식당 리스트.
+def _execute_search(driver, slots, k=10):
+    """슬롯 dict로 Cypher 쿼리를 조립·실행해 후보 리스트를 반환한다.
 
-    슬롯 (전부 optional, 있는 것만 Cypher 블록으로 조립):
-        category   : Category.name           예) "고기집"
-        station    : 역 이름                 예) "서울대입구역"
-        lat, lng   : 직접 좌표 (역 대신)
-        radius     : 시작 반경 m, 기본 500. 폴백 사다리: 500→800→1200→1800
-        district   : District.name
-        menu       : 메뉴 키워드             예) "냉면"       (패턴 ②)
-        keywords   : 리뷰키워드 리스트        예) ["가격/가성비"] (패턴 ③)
-        facilities : 시설 리스트             예) ["주차", "예약"] (패턴 ④)
+    search()의 내부 실행 엔진. strict/loose 양쪽에서 공유.
 
     반환:
-        {
-          "radius_used": int | None,
-          "candidates": [
-            { place_id, name, visitor_reviews, blog_reviews, address,
-              dist,
-              matched_menu, matched_menu_price,
-              matched_keywords, avg_weight,
-              signature_menus },
-          ]
-        }
+        {"radius_used": int | None, "candidates": [...]}
     """
     blocks = [b for b in [
         _build_category_block(slots),
@@ -356,6 +340,52 @@ def search(driver, slots, k=10):
 
     rows = _run(driver, query, params)
     return {"radius_used": None, "candidates": _sort_signature_menus(rows)}
+
+
+def search(driver, slots, k=10):
+    """슬롯 dict → 후보 식당 리스트 (strict→loose 2단계 폴백 포함).
+
+    슬롯 (전부 optional, 있는 것만 Cypher 블록으로 조립):
+        category   : Category.name           예) "고기집"
+        station    : 역 이름                 예) "서울대입구역"
+        lat, lng   : 직접 좌표 (역 대신)
+        radius     : 시작 반경 m, 기본 500. 폴백 사다리: 500→800→1200→1800
+        district   : District.name
+        menu       : 메뉴 키워드             예) "냉면"       (패턴 ②)
+        keywords   : 리뷰키워드 리스트        예) ["가격/가성비"] (패턴 ③)
+        facilities : 시설 리스트             예) ["주차", "예약"] (패턴 ④)
+
+    폴백 전략:
+        1. strict 패스: 모든 슬롯 적용
+        2. strict 결과 < LOOSE_MIN_RESULTS이고 keywords/facilities 있으면:
+           loose 패스: keywords·facilities 제거 후 재실행
+        category·station/위치·menu 는 항상 유지.
+
+    반환:
+        {
+          "radius_used": int | None,
+          "candidates": [
+            { place_id, name, visitor_reviews, blog_reviews, address,
+              dist,
+              matched_menu, matched_menu_price,
+              matched_keywords, avg_weight,
+              signature_menus },
+          ],
+          "search_mode": "strict" | "loose",
+        }
+    """
+    strict = _execute_search(driver, slots, k)
+    if len(strict["candidates"]) >= LOOSE_MIN_RESULTS:
+        return {**strict, "search_mode": "strict"}
+
+    # fallback 시도 가능한 슬롯이 있을 때만
+    has_relaxable = slots.get("keywords") or slots.get("facilities")
+    if not has_relaxable:
+        return {**strict, "search_mode": "strict"}
+
+    loose_slots = {key: v for key, v in slots.items() if key not in ("keywords", "facilities")}
+    loose = _execute_search(driver, loose_slots, k)
+    return {**loose, "search_mode": "loose"}
 
 
 # 하위 호환: 기존 함수명
