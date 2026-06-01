@@ -11,6 +11,7 @@ CANDIDATE = {
     "dist": 300,
     "visitor_reviews": 150,
     "blog_reviews": 20,
+    "review_participant_count": 150,
     "matched_menu": "냉면",
     "matched_menu_price": 9000,
     "matched_keywords": [{"name": "가격/가성비", "weight": 0.3}],

@@ -39,7 +39,10 @@ def _build_user_message(
 
         lines.append(f"{idx}. {c.get('name', '이름 미상')} ({dist_str})")
         lines.append(f"   주소: {c.get('address', '-')}")
-        lines.append(f"   방문자 리뷰: {c.get('visitor_reviews', 0)}건")
+        lines.append(
+            f"   방문자 리뷰: {c.get('visitor_reviews', 0)}건"
+            f" (참여자: {c.get('review_participant_count', 0)}명)"
+        )
 
         matched_menu = c.get("matched_menu")
         if matched_menu:
@@ -85,14 +88,17 @@ def recommend(
         return "죄송해요, 조건에 맞는 식당을 찾지 못했어요."
 
     if llm_client is None:
-        return "후보 식당: " + ", ".join(c["name"] for c in candidates)
+        return "후보 식당: " + ", ".join(c.get("name", "이름 미상") for c in candidates)
 
     user_message = _build_user_message(candidates, slots, radius_used, search_mode)
 
-    response = llm_client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=512,
-        system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
-    )
-    return response.content[0].text
+    try:
+        response = llm_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        return response.content[0].text
+    except Exception:
+        return "죄송해요, 추천 생성 중 오류가 발생했어요."
