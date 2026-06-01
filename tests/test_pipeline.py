@@ -60,6 +60,8 @@ def test_anchor_path_no_llm_for_coe():
         # extract는 llm_client=None 으로 호출돼야 함
         _, extract_kwargs = mock_extract.call_args
         assert extract_kwargs.get("llm_client") is None
+        _, recommend_kwargs = mock_recommend.call_args
+        assert recommend_kwargs.get("llm_client") is None
 
 
 # ── 3. anchor 없을 때 llm_client가 extract·recommend 양쪽에 전달됨 ───
